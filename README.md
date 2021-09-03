@@ -12,7 +12,6 @@
 3. DHCP must be enabled for initial deployment even if the customer wants to use static IP addressing for the Edge Appliance.
 
 # Technical Details
-
 The script uses PowerShell Invoke-WebRequest to make calls using HTTPS over port 8443 to the existing Edge Appliance configuration/settings pages normally completed interactively by the customer. Python implements a similar module called Requests that could be used instead of PowerShell. This doesn’t use the Selenium WebDriver, and no modifications to the Nasuni backend are required to use this script.
 
 Developing the script required reverse-engineering the existing wizard pages and underlying forms. Most form interactions and basic error handling are implemented in the script, but not everything is (e.g., we currently skip installing updates in the script). However, that can be expanded as appropriate.
