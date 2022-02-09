@@ -1,4 +1,4 @@
-# edge-appliance-automation
+# Nasuni Edge Appliance Automation
  Scripts for automating the deployment of Nasuni Edge Appliances
 
 # Main Auto Deploy Script functions
