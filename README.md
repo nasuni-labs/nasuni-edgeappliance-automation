@@ -17,3 +17,22 @@ The script uses PowerShell Invoke-WebRequest to make calls using HTTPS over port
 Most form interactions and basic error handling are implemented in the script, but not everything is (e.g., we currently skip installing updates in the script). However, that can be expanded as appropriate.
 
 The main sections of the deployment wizard work must be accessed sequentially and are only made available for calls after the previous section has been completed. For example, it is not possible to make calls to the “Accept EULA" page until the “Serial Number” page has been successfully submitted. Further, once a page has been successfully submitted, the wizard's active “stage” is updated, and you cannot access a previous stage of the wizard without calling a special action to reverse a prior step. The script accounts for both of these behaviors and steps through the wizard's key stages in the correct order. The script now knows where to pick up where it left off now and can be run multiple times if desired. The script doesn’t attempt to configure something that is already configured (i.e., if the network config is already set, it skips configuring the network).
+
+# Static IP Example
+```powershell
+#example variables for static IP config after deployment
+$bootproto = 'static'
+$gateway = '192.168.86.1'
+#dns information
+$search_domain = 'mydomain.com'
+$primary_dns = '8.8.8.8'
+$secondary_dns = ''
+
+#Populate the Network Inferface Settings information for the first Traffic Group
+#specify boot protocol - dhcp (dhcp) or static. dhcp2 is not valid for traffic groups. For dhcp, set 1proto to DHCP and do not set info for the other variables in this section.
+$1proto	= 'static'
+#enter the desired IP address for the Edge Appliance
+$1ipaddr = '192.168.86.136'
+$1netmask =	'255.255.255.0'
+$1mtu =	'1500'
+```
