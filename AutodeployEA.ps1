@@ -24,7 +24,7 @@ function GetPageState{
 #Get a serial number and auth code from the NMC, complete the Edge Appliance Setup wizard, and join the Edge Appliance to the domain
 #Needs PowerShell 6 or higher
 
-#Variables for Part 1 - NMC login to get serial number and auth
+#Variables for Part 1 - NMC login to get serial number and auth for the next section
 #specify NMC hostname
 $NMCHostname = "insertNMChostnameOrIP"
 
@@ -50,7 +50,7 @@ $EdgeAppliancePassword = 'password'
 $bootproto = 'dhcp2'
 $gateway = ''
 #dns information
-$search_domain = 'domain.con'
+$search_domain = 'domain.com'
 $primary_dns = 'insertDnsIP'
 $secondary_dns = ''
 
@@ -62,8 +62,26 @@ $1ipaddr = ''
 $1netmask =	''
 $1mtu =	'1500'
 
+#Proxy Config
+#configure proxy (on for yes, empty for no)
+$changeProxy = ''
+#proxy hostname or IP address
+$proxyHost = 'insertProxyIP'
+#proxyPort
+$proxyPort = 8080
+#proxy Username (optional)
+$proxyUsername = ''
+#proxy Password (optional)
+$proxyPassword = ''
+#proxy no proxy list (optional) - comma separated for multiple entries
+$proxyNoProxy = ''
+#proxy enabled - 1 true, 0 false
+$proxyEnabled = 1
+
 #Variables for Part 3 - Domain Join
-#AD Domain Information
+#Contrals whether to join AD domain - true or false
+$JoinDomain = 'true'
+#AD Domain Name - e.g., domain.com
 $DomainName = "insertDomain.com"
 
 #AD Join credentials - an AD account with permission to join the domain. Do not specify a Domain Prefix
@@ -147,6 +165,7 @@ $NetworkFormInput = [ordered]@{
     "search_domain" = $search_domain
     "primary_dns"	= $primary_dns
     "secondary_dns" = $secondary_dns
+    "changeproxy" = $changeproxy
     "1-proto"	= $1proto
     "1-ipaddr" = $1ipaddr
     "1-netmask" = $1netmask
@@ -177,8 +196,37 @@ $CSRFOnlyFormInput = [ordered]@{
 }
 } else {write-output "Skipping network, wizard state is $PageStateVar"}
 
+#Proxy Page
+#check to see if proxy needs to be configured
+if ($changeProxy -eq 'on' ) {
+$PageStateVar = GetPageState
+if ($PageStateVar -like '*/wizard/proxy*' ) {
+    $ProxyUri = "https://" + $IpAddress + ":8443/wizard/proxy/"
+    #replace comma with end of line character for no Proxy list
+    $proxyNoProxy = $proxyNoProxy.replace(",","`r`n")
+
+    #Submit Proxy Page
+    $ProxyHeaderInput = @{
+    "Referer" = $ProxyUri
+}
+    $ProxyFormInput = [ordered]@{
+        "csrfmiddlewaretoken" = $csrfmiddlewaretoken
+        "dotest" = 'true'
+        "proxy" = $proxyHost
+        "port" = $proxyPort
+        "username" = $proxyUsername
+        "password" = $proxyPassword
+        "no_proxy" = $proxyNoProxy
+        "enabled" = $proxyEnabled
+    }
+
+    write-output "Submitting Proxy Configuration"
+    $SubmitProxyConfig=Invoke-WebRequest -Uri $ProxyUri -WebSession $sv -Method POST -Form $ProxyFormInput -Headers $ProxyHeaderInput -skipCertificateCheck
+    write-output "-Status Code: $($SubmitProxyConfig.StatusCode)"
+}
+}
+
 #Submit Netready
-#Pause for next step
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/netready*' ) {
     $NetreadyUri = "https://" + $IpAddress + ":8443/wizard/netready/"
@@ -202,6 +250,7 @@ if ($1proto -eq "static") {
     write-output "switching to new ip address"
     #change the IP address for subsequent calls to use the new static IP address we assigned for the interface in the first traffic group
     $IpAddress = $1ipaddr
+    $GetStateUri = "https://" + $IpAddress + ":8443/"
 }
 } else {write-output "Skipping netready, wizard state is $PageStateVar"}
 
@@ -387,8 +436,8 @@ if ($PageStateVar -like '*/wizard/createuser*' ) {
 
 write-output "Step 2 Wizard Complete"
 
-#Part 3 - Domain Join
-write-output "Starting Step 3 - Domain Join"
+#Part 3 - NMC Join Check and Domain Join
+write-output "Part 3: Joining NMC Management Check and AD Domain Join"
 #Login Page
 $LoginUri = "https://" + $IpAddress + ":8443/login/"
 
@@ -404,15 +453,77 @@ $LoginHeaderInput = @{
 
 $LoginFormInput = [ordered]@{
     "csrfmiddlewaretoken" = $csrfmiddlewaretoken
-    "username" = $username
-    "password" = $password
+    "username" = $EdgeApplianceUsername
+    "password" = $EdgeAppliancePassword
 }
 
 write-output "Submitting Login"
 $SubmitLogin=Invoke-WebRequest -Uri $LoginUri -WebSession $sv -Method POST -Form $LoginFormInput -Headers $LoginHeaderInput -skipCertificateCheck
 write-output "-Status Code: $($SubmitLogin.StatusCode)"
 
+#Begin NMC section
+$NmcUri = "https://" + $IpAddress + ":8443/support/nmc/"
+
+$AjaxHeaderInput = @{
+    "Referer" = $NmcUri
+    "csrftoken" = $csrfmiddlewaretoken
+    "X-Requested-With" = "XMLHttpRequest"
+}
+$GetNmc=Invoke-WebRequest -uri $NmcUri -skipCertificateCheck -WebSession $sv -Headers $AjaxHeaderInput
+#get a new csrftoken
+$csrfmiddlewaretoken = $GetNMC.inputfields[0].value
+
+#Regex pattern to compare two strings
+$nmcStartString = 'selected="selected">'
+$nmcStopString = '</option>'
+$nmcPattern = "$nmcStartString(.*?)$nmcStopString"
+
+#Perform the comparison operation to get the state of the NMC Join
+$nmcState = [regex]::Match($GetNmc.content, $nmcPattern).Groups[1].Value
+
+if ($nmcState -eq 'enabled') {
+    write-output "Already under NMC management - Skipping NMC Join"
+}
+else {
+    write-output "Checking NMC management"
+    
+#join NMC management
+
+#Post NMC Confirmation Services
+$NmcConfirmUri = "https://" + $IpAddress + ":8443/support/confirm_nmc/" 
+
+$NmcConfirmFormInput = [ordered]@{
+    "csrfmiddlewaretoken" = $csrfmiddlewaretoken
+    "username" = $EdgeApplianceUsername
+    "password" = $EdgeAppliancePassword
+}
+$NmcConfirmHeaderInput = [ordered]@{
+    "Referer" = $NmcUri
+    "X-Requested-With" = "XMLHttpRequest"
+    "X-CSRFToken" = $csrfmiddlewaretoken
+}
+write-output "Confirming NMC Join"
+$ConfirmNMC=Invoke-WebRequest -Uri $NmcConfirmUri -WebSession $sv -Method POST -Form $NmcConfirmFormInput -Headers $NmcConfirmHeaderInput -skipCertificateCheck
+write-output "-Confirm NMC Status Code: $($ConfirmNMC.StatusCode)"
+
+$JoinNMCUri = "https://" + $IpAddress + ":8443/support/nmc/" 
+$JoinNMCFormInput = [ordered]@{
+    "csrfmiddlewaretoken" = $csrfmiddlewaretoken
+    "enabled" = "ENABLED"
+}
+$JoinNMCHeaderInput = [ordered]@{
+    "Referer" = $NmcUri
+    "X-Requested-With" = "XMLHttpRequest"
+    "X-CSRFToken" = $csrfmiddlewaretoken
+}
+write-output "Joining NMC - May take 5 minutes"
+$JoinNMC=Invoke-WebRequest -Uri $JoinNMCUri -WebSession $sv -Method POST -Form $JoinNMCFormInput -Headers $JoinNMCHeaderInput -skipCertificateCheck
+write-output "-Join NMC Status Code: $($JoinNMC.StatusCode)"
+}
+
 #Configure Directory Services
+#only configure AD if AD join is enabled in script
+if ($JoinDomain -eq 'true') {
 $DirectoryServicesUri = "https://" + $IpAddress + ":8443/directoryservices/"
 
 #Get the Domain Health to check the status of the join - if already healthy, skip domain config
@@ -578,3 +689,5 @@ else {#Join Domain again if AD join health check fails
     else {write-output "Domain Join Unhealthy - check network configuration and Edge Appliance UI"}
     }
 }
+} 
+else {write-output "Skipping domain join, domain join disabled in script"}
