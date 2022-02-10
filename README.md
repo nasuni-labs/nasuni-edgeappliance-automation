@@ -7,7 +7,7 @@
 3. Logs into Edge Appliance after setup and completes Active Directory join.
 
 # Requirements
-1. Nasuni 8.8 Edge Appliances or higher required. 8.8, 9.0, and 9.3 have been tested.
+1. Nasuni 8.8 Edge Appliances or higher required. 8.8, 9.0, 9.3, and 9.5 have been tested.
 2. Powershell 6 or higher must be used--the script uses some functions unavailable in earlier versions of PowerShell. Note: PowerShell ISE, the PowerShell Editor included with Windows, is based on PowerShell 4 and should not be used with this script. Visual Studio Code is the best editor for the latest versions of PowerShell.
 3. DHCP must be enabled for initial deployment even if the customer wants to use static IP addressing for the Edge Appliance.
 
