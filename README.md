@@ -18,7 +18,14 @@ Most form interactions and basic error handling are implemented in the script, b
 
 The main sections of the deployment wizard work must be accessed sequentially and are only made available for calls after the previous section has been completed. For example, it is not possible to make calls to the “Accept EULA" page until the “Serial Number” page has been successfully submitted. Further, once a page has been successfully submitted, the wizard's active “stage” is updated, and you cannot access a previous stage of the wizard without calling a special action to reverse a prior step. The script accounts for both of these behaviors and steps through the wizard's key stages in the correct order. The script now knows where to pick up where it left off now and can be run multiple times if desired. The script doesn’t attempt to configure something that is already configured (i.e., if the network config is already set, it skips configuring the network).
 
-# Static IP Example
+# Variables
+The AutoDeployEA.ps1 script does not need to be modified. It only needs one input--the path (varPath in the script) to a variables input file. Variables for the script are stored in a file called "Variables.ps1". You can used the include Variables.ps1 file as a template for your environment.
+
+# Executing the script
+Running the script is easy. From within PowerShell, execute the script and provide input for varPath
+`./AutoDeployEA.ps1 -varPath <path>`
+
+# Static IP Example for Variables
 ```powershell
 #example variables for static IP config after deployment
 $bootproto = 'static'
