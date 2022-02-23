@@ -22,7 +22,7 @@ The main sections of the deployment wizard work must be accessed sequentially an
 The AutoDeployEA.ps1 script does not need to be modified. It only needs one input--the path (varPath in the script) to a variables input file. Variables for the script are stored in a file called "Variables.ps1". You can used the include Variables.ps1 file as a template for your environment.
 
 # Executing the script
-Running the script is easy. From within PowerShell, execute the script and provide input for varPath<br>
+Running the script is easy. From within PowerShell, execute the script and provide input for varPath.<br>
 `./AutoDeployEA.ps1 -varPath <path>`
 
 # Static IP Example for Variables
