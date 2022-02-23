@@ -1,3 +1,10 @@
+#Get a serial number and auth code from the NMC, complete the Edge Appliance Setup wizard, and join the Edge Appliance to the domain
+#Needs PowerShell 6 or higher
+
+#define script parameters
+param ($varPath)
+
+#define the function for getting page state
 function GetPageState{
     $script:GetState=Invoke-WebRequest -uri $GetStateUri -skipCertificateCheck -SessionVariable sv
     #Regex pattern to compare two strings
@@ -21,77 +28,35 @@ function GetPageState{
     return $PageState
 }
 
-#Get a serial number and auth code from the NMC, complete the Edge Appliance Setup wizard, and join the Edge Appliance to the domain
-#Needs PowerShell 6 or higher
+#Read the Variables content from an external PowerShell script
+if ($null -eq $varPath) {
+$varPath = read-host -Prompt "Please enter the path to the variables input file" 
+}
 
-#Variables for Part 1 - NMC login to get serial number and auth for the next section
-#specify NMC hostname
-$NMCHostname = "insertNMChostnameOrIP"
+#get the invocation path for the script
+$mypath = $MyInvocation.MyCommand.Path
 
-#specify NMC login information - use DOMAIN\username for domain accounts
-$username = 'username'
-$password = 'password'
+#find the correct slash to use. Requires PowerShell 6
+if ($isWindows -eq 'True)') {$slash = "\"} else {$slash = "/"} 
 
-#Variables for Part 2 - Edge Appliance Setup Wizard
-#Enter Edge Appliance IP Address
-$IpAddress = "insertEdgeApplianceIPaddress"
+#determine full or local path
+if (($varPath -like "*/*") -or ($varPath -like "*\*")) {$absolutePath = 'True'} else {$absolutePath = 'False'}
 
-#Enter Edge Appliance Name
-$EdgeApplianceName = "insertEdgeApplianceName"
+#if an absolute path was input use it as is
+if ($absolutePath -eq 'True') {$fullVarPath = $varPath} else {
+    $parentPath = Split-Path $mypath -Parent
+    $fullVarPath = $parentPath + $slash + $varPath
+}
+#load Variables into the script
+. $fullVarPath
 
-#Enter desired Edge Appliance User Name and Password
-$EdgeApplianceUsername = "username"
-$EdgeAppliancePassword = 'password'
+#Part 1 - login to the NMC and export a list of serial numbers and auth codes
+#skip this section if GetSerialFromNMC is false
+if ($GetSerialFromNMC -eq 'true') {
+Write-Output "Part 1: Logging into the NMC to get an unused auth code and serial number"
 
-#Network Information
-#Populate the information for the System Settings portion of network configuration.
-#specify boot protocol - dhcp (dhcp), dhcp2 (dhcp with custom dns) or static. For dhcp set bootproto to dhcp and leave the other variables blank.
-#for dhcp with custom dns, set dhcp2 for bootproto and populate the other variables in this section. 
-$bootproto = 'dhcp2'
-$gateway = ''
-#dns information
-$search_domain = 'domain.com'
-$primary_dns = 'insertDnsIP'
-$secondary_dns = ''
-
-#Populate the Network Inferface Settings information for the first Traffic Group
-#specify boot protocol - dhcp or static. dhcp2 is not valid for traffic groups. For dhcp, set 1proto to DHCP and do not set info for the other variables in this section.
-$1proto	= 'dhcp'
-#enter the desired IP address for the Edge Appliance
-$1ipaddr = ''
-$1netmask =	''
-$1mtu =	'1500'
-
-#Proxy Config
-#configure proxy (on for yes, empty for no)
-$changeProxy = ''
-#proxy hostname or IP address
-$proxyHost = 'insertProxyIP'
-#proxyPort
-$proxyPort = 8080
-#proxy Username (optional)
-$proxyUsername = ''
-#proxy Password (optional)
-$proxyPassword = ''
-#proxy no proxy list (optional) - comma separated for multiple entries
-$proxyNoProxy = ''
-#proxy enabled - 1 true, 0 false
-$proxyEnabled = 1
-
-#Variables for Part 3 - Domain Join
-#Contrals whether to join AD domain - true or false
-$JoinDomain = 'true'
-#AD Domain Name - e.g., domain.com
-$DomainName = "insertDomain.com"
-
-#AD Join credentials - an AD account with permission to join the domain. Do not specify a Domain Prefix
-$JoinUsername = 'DomainUsername'
-$JoinPassword = 'DomainPassword'
-
-#Begin Configuration
-#Part 1 - login to the NMC and export a list of serial numbers and auth codes to CSV
 #LoginPage
-$LoginUri = "https://" + $NMCHostname + "/login/?next=/"
+$LoginUri = "https://" + $NmcHostname + "/login/?next=/"
 $GetLogin=Invoke-WebRequest -uri $LoginUri -skipCertificateCheck -SessionVariable sv 
 $Form = $GetLogin.InputFields
 $csrfmiddlewaretoken = $Form[0].value
@@ -103,8 +68,8 @@ $LoginHeaderInput = @{
 
 $LoginFormInput = [ordered]@{
     "csrfmiddlewaretoken" = $csrfmiddlewaretoken
-    "username" = $username
-    "password" = $password
+    "username" = $NmcUsername
+    "password" = $NmcPassword
 }
 
 #write-output "Logging into the NMC"
@@ -112,7 +77,7 @@ $SubmitLogin=Invoke-WebRequest -Uri $LoginUri -WebSession $sv -Method POST -Form
 #write-output "-Status Code: $($SubmitLogin.StatusCode)"
 
 #Serials Page
-$SerialsUri = "https://" + $NMCHostname + "/account/serial_numbers/json/"
+$SerialsUri = "https://" + $NmcHostname + "/account/serial_numbers/json/"
 
 #Get Serials
 $GetSerials = Invoke-WebRequest -uri $SerialsUri -skipCertificateCheck -WebSession $sv
@@ -132,21 +97,23 @@ foreach($NameJson in $NamesJson)
  
     #return the first unused filer serial number and auth code
     if (($null -eq $filer_description) -and ($null -eq $filer_build) -and ($serial_number_type -eq "filer")) {
-    $serialNumber = $serial_number
-    $authCode = $auth_code
+    $SerialNumber = $serial_number
+    $AuthCode = $auth_code
     write-output "Found unused serial for deployment"
     break
     }
     }
+} else {write-output "Skipping Part1: NMC Login-getting Serial Numbers from the NMC is dsabled"}
 
 #Part 2 - Edge Appliance Setup Wizard
+Write-Output "Part 2: Edge Appliance Set up Wizard"
 #build the variables to check the Edge Appliance state for each step
-$GetStateUri = "https://" + $IpAddress + ":8443/"
+$GetStateUri = "https://" + $EdgeApplianceIpAddress + ":8443/"
 
 #Network Page
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/network*' ) {
-$NetworkUri = "https://" + $IpAddress + ":8443/wizard/network/"
+$NetworkUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/network/"
 $GetNetwork=Invoke-WebRequest -uri $NetworkUri -skipCertificateCheck -SessionVariable sv
 $Form = $GetNetwork.InputFields
 $csrfmiddlewaretoken = $Form[0].value
@@ -160,16 +127,16 @@ $NetworkFormInput = [ordered]@{
     "csrfmiddlewaretoken" = $csrfmiddlewaretoken
     "hostname" = $EdgeApplianceName
     "eth0-traffic_group" = '1'
-    "bootproto" = $bootproto
-    "gateway"	= $gateway
-    "search_domain" = $search_domain
-    "primary_dns"	= $primary_dns
-    "secondary_dns" = $secondary_dns
-    "changeproxy" = $changeproxy
-    "1-proto"	= $1proto
-    "1-ipaddr" = $1ipaddr
-    "1-netmask" = $1netmask
-    "1-mtu" = $1mtu
+    "bootproto" = $NwBootproto
+    "gateway"	= $NwGateway
+    "search_domain" = $NwSearchDomain
+    "primary_dns"	= $NwPrimaryDNS
+    "secondary_dns" = $NwSecondaryDNS
+    "changeproxy" = $NwProxyConfigure
+    "1-proto"	= $NwTG1Proto
+    "1-ipaddr" = $NwTG1Ipaddr
+    "1-netmask" = $NwTG1Netmask
+    "1-mtu" = $NwTG1Mtu
     "1-gateway" = ''
     "1-device" = '1'
     "2-proto"	= 'dhcp'
@@ -198,12 +165,12 @@ $CSRFOnlyFormInput = [ordered]@{
 
 #Proxy Page
 #check to see if proxy needs to be configured
-if ($changeProxy -eq 'on' ) {
+if ($NwProxyConfigure -eq 'on' ) {
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/proxy*' ) {
-    $ProxyUri = "https://" + $IpAddress + ":8443/wizard/proxy/"
+    $ProxyUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/proxy/"
     #replace comma with end of line character for no Proxy list
-    $proxyNoProxy = $proxyNoProxy.replace(",","`r`n")
+    $NwProxyNoProxy = $NwProxyNoProxy.replace(",","`r`n")
 
     #Submit Proxy Page
     $ProxyHeaderInput = @{
@@ -212,12 +179,12 @@ if ($PageStateVar -like '*/wizard/proxy*' ) {
     $ProxyFormInput = [ordered]@{
         "csrfmiddlewaretoken" = $csrfmiddlewaretoken
         "dotest" = 'true'
-        "proxy" = $proxyHost
-        "port" = $proxyPort
-        "username" = $proxyUsername
-        "password" = $proxyPassword
-        "no_proxy" = $proxyNoProxy
-        "enabled" = $proxyEnabled
+        "proxy" = $NwProxyHost
+        "port" = $NwProxyPort
+        "username" = $NwProxyUsername
+        "password" = $NwProxyPassword
+        "no_proxy" = $NwProxyNoProxy
+        "enabled" = $NwProxyEnabled
     }
 
     write-output "Submitting Proxy Configuration"
@@ -229,7 +196,7 @@ if ($PageStateVar -like '*/wizard/proxy*' ) {
 #Submit Netready
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/netready*' ) {
-    $NetreadyUri = "https://" + $IpAddress + ":8443/wizard/netready/"
+    $NetreadyUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/netready/"
     $GetNetready=Invoke-WebRequest -uri $NetreadyUri -skipCertificateCheck -SessionVariable sv
     $Form = $GetNetReady.InputFields
     $csrfmiddlewaretoken = $Form[0].value
@@ -246,11 +213,11 @@ if ($PageStateVar -like '*/wizard/netready*' ) {
     write-output "-Status Code: $($SubmitNetready.StatusCode)"
 
 #switch to newly configured static IP update static IP
-if ($1proto -eq "static") {
+if ($NwTG1Proto -eq "static") {
     write-output "switching to new ip address"
     #change the IP address for subsequent calls to use the new static IP address we assigned for the interface in the first traffic group
-    $IpAddress = $1ipaddr
-    $GetStateUri = "https://" + $IpAddress + ":8443/"
+    $EdgeApplianceIpAddress = $NwTG1Ipaddr
+    $GetStateUri = "https://" + $EdgeApplianceIpAddress + ":8443/"
 }
 } else {write-output "Skipping netready, wizard state is $PageStateVar"}
 
@@ -259,7 +226,7 @@ if ($1proto -eq "static") {
 Start-Sleep -s 20
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/updates*' ) {
-$UpdatesUri = "https://" + $IpAddress + ":8443/wizard/updates/"
+$UpdatesUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/updates/"
 #Get a new CSRF token--we need to do this when switching to static IP
 $GetUpdates=Invoke-WebRequest -uri $UpdatesUri -skipCertificateCheck -SessionVariable sv 
 $Form = $GetUpdates.InputFields
@@ -284,7 +251,7 @@ Start-Sleep -s 10
 #Submit Serial and Auth
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/serial*' ) {
-$SerialUri = "https://" + $IpAddress + ":8443/wizard/serial/"
+$SerialUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/serial/"
 $GetSerial=Invoke-WebRequest -uri $SerialUri -skipCertificateCheck -SessionVariable sv
 $Form = $GetSerial.InputFields
 $csrfmiddlewaretoken = $Form[0].value
@@ -293,8 +260,8 @@ $SerialHeader = @{
 }
 $SerialFormInput = [ordered]@{
     "csrfmiddlewaretoken" = $csrfmiddlewaretoken
-    "serial_number" = $serialNumber
-    "auth_code" = $authCode
+    "serial_number" = $SerialNumber
+    "auth_code" = $AuthCode
 }
 write-output "Submitting serial number"
 $SubmitSerial=Invoke-WebRequest -Uri $SerialUri -WebSession $sv -Method POST -Form $SerialFormInput -Headers $SerialHeader -skipCertificateCheck
@@ -304,7 +271,7 @@ write-output "-Status Code: $($SubmitSerial.StatusCode)"
 #ConfirmNew
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/confirmnew*' ) {
-$ConfirmNewUri = "https://" + $IpAddress + ":8443/wizard/confirmnew/"
+$ConfirmNewUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/confirmnew/"
 $GetConfirmNew=Invoke-WebRequest -uri $ConfirmNewUri -skipCertificateCheck -SessionVariable sv
 $Form = $GetConfirmNew.InputFields
 $csrfmiddlewaretoken = $Form[0].value
@@ -323,7 +290,7 @@ write-output "-Status Code: $($SubmitConfirmNew.StatusCode)"
 #PostSerialUpdate Check
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/update_new*' ) {
-$PostSerialUpdateUri = "https://" + $IpAddress + ":8443/wizard/update_new/"
+$PostSerialUpdateUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/update_new/"
 $GetPostSerialUpdate=Invoke-WebRequest -uri $PostSerialUpdateUri -skipCertificateCheck -SessionVariable sv
 $Form = $GetPostSerialUpdate.InputFields
 $csrfmiddlewaretoken = $Form[0].value
@@ -341,7 +308,7 @@ write-output "-Status Code: $($SubmitPostSerialUpdate.StatusCode)"
 #Accept EULA
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/eula*' ) {
-$EulaUri = "https://" + $IpAddress + ":8443/wizard/eula/"
+$EulaUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/eula/"
 $GetEula=Invoke-WebRequest -uri $EulaUri -skipCertificateCheck -SessionVariable sv
 $Form = $GetEULA.InputFields
 $csrfmiddlewaretoken = $Form[0].value
@@ -360,7 +327,7 @@ write-output "-Status Code: $($SubmitEula.StatusCode)"
 #Populate Edge Appliance Description
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/description*' ) {
-$DescriptionUri = "https://" + $IpAddress + ":8443/wizard/description/"
+$DescriptionUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/description/"
 $GetDescription=Invoke-WebRequest -uri $DescriptionUri -skipCertificateCheck -SessionVariable sv
 $Form = $GetDescription.InputFields
 $csrfmiddlewaretoken = $Form[0].value
@@ -379,7 +346,7 @@ write-output "-Status Code: $($SubmitDescription.StatusCode)"
 #Check NMC - Join NMC Management
 $PageStateVar = GetPageState
 if ($PageStateVar -like '*/wizard/checknmc*' ) {
-$CheckNMCUri = "https://" + $IpAddress + ":8443/wizard/checknmc/"
+$CheckNMCUri = "https://" + $EdgeApplianceIpAddress + ":8443/wizard/checknmc/"
 $GetCheckNMC=Invoke-WebRequest -uri $CheckNMCUri -skipCertificateCheck -SessionVariable sv
 $Form = $GetCheckNMC.InputFields
 $csrfmiddlewaretoken = $Form[0].value
@@ -405,7 +372,7 @@ if ($PageStateVar -like '*/wizard/createuser*' ) {
     write-output "Creating user"
     $CreateUserTimeoutSeconds = 15
     $job = Start-Job { 
-        $CreateUserUri = "https://" + $using:IpAddress + ":8443/wizard/createuser/"
+        $CreateUserUri = "https://" + $using:EdgeApplianceIpAddress + ":8443/wizard/createuser/"
         $GetCreateUser=Invoke-WebRequest -uri $CreateUserUri -skipCertificateCheck -SessionVariable sv
         $Form = $GetCreateUser.InputFields
         $csrfmiddlewaretoken = $Form[0].value
@@ -434,12 +401,12 @@ if ($PageStateVar -like '*/wizard/createuser*' ) {
     }
 } else {write-output "Skipping user creation page, wizard state is $PageStateVar"}
 
-write-output "Step 2 Wizard Complete"
+write-output "Part 2: Wizard Complete"
 
 #Part 3 - NMC Join Check and Domain Join
 write-output "Part 3: Joining NMC Management Check and AD Domain Join"
 #Login Page
-$LoginUri = "https://" + $IpAddress + ":8443/login/"
+$LoginUri = "https://" + $EdgeApplianceIpAddress + ":8443/login/"
 
 #Get the Login page and get the csrfmiddlewaretoken
 $GetLogin=Invoke-WebRequest -uri $LoginUri -skipCertificateCheck -SessionVariable sv
@@ -462,7 +429,7 @@ $SubmitLogin=Invoke-WebRequest -Uri $LoginUri -WebSession $sv -Method POST -Form
 write-output "-Status Code: $($SubmitLogin.StatusCode)"
 
 #Begin NMC section
-$NmcUri = "https://" + $IpAddress + ":8443/support/nmc/"
+$NmcUri = "https://" + $EdgeApplianceIpAddress + ":8443/support/nmc/"
 
 $AjaxHeaderInput = @{
     "Referer" = $NmcUri
@@ -490,7 +457,7 @@ else {
 #join NMC management
 
 #Post NMC Confirmation Services
-$NmcConfirmUri = "https://" + $IpAddress + ":8443/support/confirm_nmc/" 
+$NmcConfirmUri = "https://" + $EdgeApplianceIpAddress + ":8443/support/confirm_nmc/" 
 
 $NmcConfirmFormInput = [ordered]@{
     "csrfmiddlewaretoken" = $csrfmiddlewaretoken
@@ -506,7 +473,7 @@ write-output "Confirming NMC Join"
 $ConfirmNMC=Invoke-WebRequest -Uri $NmcConfirmUri -WebSession $sv -Method POST -Form $NmcConfirmFormInput -Headers $NmcConfirmHeaderInput -skipCertificateCheck
 write-output "-Confirm NMC Status Code: $($ConfirmNMC.StatusCode)"
 
-$JoinNMCUri = "https://" + $IpAddress + ":8443/support/nmc/" 
+$JoinNMCUri = "https://" + $EdgeApplianceIpAddress + ":8443/support/nmc/" 
 $JoinNMCFormInput = [ordered]@{
     "csrfmiddlewaretoken" = $csrfmiddlewaretoken
     "enabled" = "ENABLED"
@@ -523,8 +490,8 @@ write-output "-Join NMC Status Code: $($JoinNMC.StatusCode)"
 
 #Configure Directory Services
 #only configure AD if AD join is enabled in script
-if ($JoinDomain -eq 'true') {
-$DirectoryServicesUri = "https://" + $IpAddress + ":8443/directoryservices/"
+if ($DomainJoin -eq 'true') {
+$DirectoryServicesUri = "https://" + $EdgeApplianceIpAddress + ":8443/directoryservices/"
 
 #Get the Domain Health to check the status of the join - if already healthy, skip domain config
 #Add X-Request-With to the header since Domain health expects it
@@ -534,7 +501,7 @@ $AjaxHeaderInput = @{
     "X-Requested-With" = "XMLHttpRequest"
 }
 
-$DomainHealthUri = "https://" + $IpAddress + ":8443/directoryservices/health_check/"
+$DomainHealthUri = "https://" + $EdgeApplianceIpAddress + ":8443/directoryservices/health_check/"
 write-output "Getting Domain Join Health"
 $GetDomainHealth=Invoke-WebRequest -uri $DomainHealthUri -skipCertificateCheck -WebSession $sv -Headers $AjaxHeaderInput
 write-output "-Status Code: $($GetDomainHealth.StatusCode)"
@@ -588,9 +555,9 @@ $DirectoryServicesPostFormInput = [ordered]@{
     "id_max" = $null
     "domain_type" = 'ads'
     "csrfmiddlewaretoken" = $csrfmiddlewaretoken
-    "username" = $JoinUsername
-    "password" = $JoinPassword
-    "password2" = $JoinPassword
+    "username" = $DomainUsername
+    "password" = $DomainPassword
+    "password2" = $DomainPassword
 }
 
 #submit first with val_only set to true to test the configuration
@@ -614,7 +581,7 @@ $AjaxHeaderInput = @{
     "csrftoken" = $csrfmiddlewaretoken
     "X-Requested-With" = "XMLHttpRequest"
 }
-$DomainSrcConfigUri = "https://" + $IpAddress + ":8443/directoryservices/domain_src_config/"
+$DomainSrcConfigUri = "https://" + $EdgeApplianceIpAddress + ":8443/directoryservices/domain_src_config/"
 write-output "Getting Domain Source Configuration"
 $GetDomainSrcConfig=Invoke-WebRequest -uri $DomainSrcConfigUri -skipCertificateCheck -WebSession $sv -Headers $AjaxHeaderInput
 write-output "-Status Code: $($GetDomainSrcConfig.StatusCode)"
@@ -636,12 +603,12 @@ $PostDomainSrcConfig=Invoke-WebRequest -Uri $DomainSrcConfigUri -WebSession $sv 
 write-output "-Status Code: $($PostDomainSrcConfig.StatusCode)"
 
 #Submit the Wizard Complete Page
-$WizardCompleteUri = "https://" + $IpAddress + ":8443/directoryservices/wizard_complete/"
+$WizardCompleteUri = "https://" + $EdgeApplianceIpAddress + ":8443/directoryservices/wizard_complete/"
 $WizardCompleteFormInput = [ordered]@{
     "csrfmiddlewaretoken" = $csrfmiddlewaretoken
-    "username" = $JoinUsername
-    "password" = $JoinPassword
-    "password2" = $JoinPassword
+    "username" = $DomainUsername
+    "password" = $DomainPassword
+    "password2" = $DomainPassword
 }
 
 write-output "Completing the Domain Join Wizard"
@@ -649,7 +616,7 @@ $PostWizardComplete=Invoke-WebRequest -Uri $WizardCompleteUri -WebSession $sv -M
 write-output "-Status Code: $($PostWizardComplete.StatusCode)"
 
 #Get the Domain Health to check the status of the join
-$DomainHealthUri = "https://" + $IpAddress + ":8443/directoryservices/health_check/"
+$DomainHealthUri = "https://" + $EdgeApplianceIpAddress + ":8443/directoryservices/health_check/"
 write-output "Getting Domain Join Health"
 $GetDomainHealth=Invoke-WebRequest -uri $DomainHealthUri -skipCertificateCheck -WebSession $sv -Headers $AjaxHeaderInput
 write-output "-Status Code: $($GetDomainHealth.StatusCode)"
@@ -666,13 +633,13 @@ else {#Join Domain again if AD join health check fails
     "controllers" = ''
     "rejoin" = 'on'
     "csrfmiddlewaretoken" = $csrfmiddlewaretoken
-    "username" = $JoinUsername
-    "password" = $JoinPassword
-    "password2" = $JoinPassword
+    "username" = $DomainUsername
+    "password" = $DomainPassword
+    "password2" = $DomainPassword
     }
 
     #Set Rejoin URI
-    $RejoinUri = "https://" + $IpAddress + ":8443/directoryservices/settings/"
+    $RejoinUri = "https://" + $EdgeApplianceIpAddress + ":8443/directoryservices/settings/"
 
     #submit rejoin request
     write-output "Rejoining AD"
