@@ -103,7 +103,7 @@ foreach($NameJson in $NamesJson)
     break
     }
     }
-} else {write-output "Skipping Part1: NMC Login-getting Serial Numbers from the NMC is dsabled"}
+} else {write-output "Skipping Part1: NMC Login-getting Serial Numbers from the NMC is disabled"}
 
 #Part 2 - Edge Appliance Setup Wizard
 Write-Output "Part 2: Edge Appliance Set up Wizard"
