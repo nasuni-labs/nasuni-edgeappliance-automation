@@ -360,7 +360,7 @@ $CheckNMCFormInput = [ordered]@{
 #Pause for next step
 Start-Sleep -s 5
 
-write-output "Joining NMC Manaagement"
+write-output "Joining NMC Management"
 $SubmitCheckNMC=Invoke-WebRequest -Uri $CheckNMCUri -WebSession $sv -Method POST -Form $CheckNMCFormInput -Headers $CheckNMCHeader -skipCertificateCheck
 write-output "-Status Code: $($SubmitCheckNMC.StatusCode)"
 } else {write-output "Skipping NMC join page, wizard state is $PageStateVar"}
