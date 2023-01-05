@@ -1,5 +1,15 @@
 # Nasuni Edge Appliance Automation
  Scripts for automating the deployment of Nasuni Edge Appliances
+ 
+# Support Statement
+
+*   These scripts have been validated with the PowerShell and Nasuni versions documented in the README file.
+    
+*   Nasuni Support is limited to the underlying APIs and pages used by the scripts.
+    
+*   Nasuni API and Protocol bugs or feature requests should be communicated to Nasuni Customer Success.
+    
+*   GitHub project to-do's, bugs, and feature requests should be submitted as “Issues” in GitHub under its repositories.
 
 # Main Auto Deploy Script functions
 1. Logs into the NMC using customer-provided credentials and finds an unused serial number and auth code that will be used for the out-of-the-box setup wizard. Since the NMC serial numbers are not accessible using the NMC API, this script logs into the NMC directly and requires an NMC login with access to the serial numbers page.
