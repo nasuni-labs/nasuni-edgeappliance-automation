@@ -1,18 +1,12 @@
 #Auto Deploy Variables
-#Variables for Part 1 - NMC login to get serial number and auth for the next section
-#Tell the script to use login to NMC to find an unused serial number and auth code (true/false). If false, you must provide a Serial Number and Auth Code
-$GetSerialFromNMC = 'true'
+#Variables for Part 1 - Get serial number using the Portal API
 
-#specify NMC hostname
-$NmcHostname = "insertNmcHostnameOrIP"
+#specify Portal hostname
+$portalHostname = "am1.portal.api.nasuni.com"
 
-#specify NMC login information - use DOMAIN\username for domain accounts
-$NmcUsername = 'username'
-$NmcPassword = 'password'
-
-#specify Serial Number and Auth code if not using the NMC to obtain them
-$SerialNumber = 'enterAuthCode'
-$AuthCode = 'enterAuthCode'
+#Portal Service Key and secret - create a service key in the Portal and enter the info here
+$portalServiceKey = 'insertPortalServiceKey'
+$portalServiceSecret = 'insertPortalServiceSecret'
 
 #Variables for Part 2 - Edge Appliance Setup Wizard
 #Enter Edge Appliance IP Address
