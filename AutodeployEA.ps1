@@ -1,5 +1,5 @@
-#Get a serial number and auth code from the NMC, complete the Edge Appliance Setup wizard, and join the Edge Appliance to the domain
-#Needs PowerShell 6 or higher
+<# Get a serial number and auth code from Portal using the Portal API, complete the Edge Appliance Setup wizard,
+and join the Edge Appliance to the domain. Requires PowerShell 6 or higher #>
 
 #define script parameters
 param ($varPath)
@@ -50,60 +50,40 @@ if ($absolutePath -eq 'True') {$fullVarPath = $varPath} else {
 #load Variables into the script
 . $fullVarPath
 
-#Part 1 - login to the NMC and export a list of serial numbers and auth codes
-#skip this section if GetSerialFromNMC is false
-if ($GetSerialFromNMC -eq 'true') {
-Write-Output "Part 1: Logging into the NMC to get an unused auth code and serial number"
+#Part 1 - login to Nasuni Portal and get an unused Edge serial number
 
-#LoginPage
-$LoginUri = "https://" + $NmcHostname + "/login/?next=/"
-$GetLogin=Invoke-WebRequest -uri $LoginUri -skipCertificateCheck -SessionVariable sv 
-$Form = $GetLogin.InputFields
-$csrfmiddlewaretoken = $Form[0].value
+Write-Output "Part 1: Getting an unused auth code and serial number from Nasuni Portal"
 
-#Submit Login Page
-$LoginHeaderInput = @{
-    "Referer" = $LoginUri
-}
+#Get a Portal access token
+#build JSON headers
+$headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+$headers.Add("x-service-key", $portalServiceKey)
+$headers.Add("x-service-secret", $portalServiceSecret)
 
-$LoginFormInput = [ordered]@{
-    "csrfmiddlewaretoken" = $csrfmiddlewaretoken
-    "username" = $NmcUsername
-    "password" = $NmcPassword
-}
-
-#write-output "Logging into the NMC"
-$SubmitLogin=Invoke-WebRequest -Uri $LoginUri -WebSession $sv -Method POST -Form $LoginFormInput -Headers $LoginHeaderInput -skipCertificateCheck
-#write-output "-Status Code: $($SubmitLogin.StatusCode)"
-
-#Serials Page
-$SerialsUri = "https://" + $NmcHostname + "/account/serial_numbers/json/"
-
-#Get Serials
-$GetSerials = Invoke-WebRequest -uri $SerialsUri -skipCertificateCheck -WebSession $sv
-
-$NasuniJson = ConvertFrom-Json –InputObject $GetSerials.Content
-$NamesJson = $NasuniJson | Get-Member | Where-Object -Property Membertype -EQ NoteProperty
-
-foreach($NameJson in $NamesJson)  
-    {  
-    $row = $NameJson.Name
-    $serial_number = $NasuniJson."$row".serial_number
-    $serial_number_type = $NasuniJson."$row".serial_number_type
-    $filer_description = $NasuniJson."$row".filer_description
-    $filer_build= $NasuniJson."$row".filer_build
-    $auth_code = $NasuniJson."$row".auth_code
-
+#construct Uri
+$url="https://"+$portalHostname+"/auth/token"
  
-    #return the first unused filer serial number and auth code
-    if (($null -eq $filer_description) -and ($null -eq $filer_build) -and ($serial_number_type -eq "filer")) {
-    $SerialNumber = $serial_number
-    $AuthCode = $auth_code
-    write-output "Found unused serial for deployment"
-    break
-    }
-    }
-} else {write-output "Skipping Part1: NMC Login-getting Serial Numbers from the NMC is disabled"}
+#Get a Portal session token
+$result = Invoke-RestMethod -Uri $url -Method 'POST' -Headers $headers
+
+#build authenticated JSON headers
+$headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+$headers.Add("Authorization", "Bearer " + $result.access_token)
+
+#get the first unused Serial Number
+#construct url
+$serialUrl="https://"+$portalHostname+"/serials?in_use=false&type=edge"
+$serials = Invoke-RestMethod $serialUrl -Method 'GET' -Headers $headers
+$serialNumber = $serials.items[0].id
+
+#get the matching auth code
+#construct auth code url
+$authCodeUrl="https://"+$portalHostname+"/serials/" + $serialNumber + "/auth_code"
+
+$getAuthCode = Invoke-RestMethod $authCodeUrl -Method 'GET' -Headers $headers
+$authCode = $getAuthCode.auth_code
+  
+write-output "found serial:"  $serialNumber  "auth code: "  $authCode
 
 #Part 2 - Edge Appliance Setup Wizard
 Write-Output "Part 2: Edge Appliance Set up Wizard"
